@@ -57,11 +57,33 @@ pip install -e .
 ```python
 import asyncio
 from tau_hub import TauRegistry
+from tau_ai.anthropic import AnthropicProvider
+from tau_ai.env import AnthropicConfig
+from tau_agent.harness import AgentHarness, AgentHarnessConfig
 
 async def main():
     # Default: TinyDB backend, stores data in tau_hub.json
     registry = TauRegistry()
 
+    # get provider or agent
+    provider = registry.get_provider("gemma-4")
+    harness_config = AgentHarnessConfig(
+            provider=provider,
+            model=provider.model,
+            system=registry.get_agent("personal_query_agent"),
+            tools=[registry.get_tool(name=get_weather)]
+        )
+    # Initialize the Harness
+    harness = AgentHarness(harness_config)
+
+    # Prompt the agent and react to events
+    print("User: Hello, who are you?")
+    async for event in harness.prompt("Hello, who are you?"):
+        ...
+
+    # Clean up provider resources
+    await provider.aclose()
+    
     # Persist an agent definition
     await registry.create_agent(
         name="weather_agent",
@@ -70,9 +92,6 @@ async def main():
         skills=["metric_units"],
     )
 
-    # Load it back
-    agent_data = await registry.get_agent("weather_agent")
-    print(agent_data)
 
 asyncio.run(main())
 ```
