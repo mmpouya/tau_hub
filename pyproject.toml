@@ -1,6 +1,6 @@
 [project]
 name = "tau-hub"
-version = "0.1.0"
+version = "0.1.1"
 description = "Cross-service agent registry for tau_agent — create, store, and retrieve agents, tools, and skills from a database."
 readme = "README.md"
 requires-python = ">=3.14"
