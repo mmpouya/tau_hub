@@ -1,9 +1,24 @@
 [project]
 name = "tau-hub"
 version = "0.1.0"
-description = "Add your description here"
+description = "Cross-service agent registry for tau_agent — create, store, and retrieve agents, tools, and skills from a database."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
+license = { text = "MIT" }
 dependencies = [
-    "tau-ai>=0.1.0",
+    "tinydb>=4.8",
 ]
+
+[project.optional-dependencies]
+mongo = ["pymongo>=4.6"]
+redis = ["redis>=5.0"]
+postgres = ["asyncpg>=0.29"]
+all = [
+    "tau-hub[mongo]",
+    "tau-hub[redis]",
+    "tau-hub[postgres]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
