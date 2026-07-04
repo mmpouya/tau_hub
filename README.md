@@ -201,3 +201,10 @@ class MyStore(AgentStore):
 ## License
 
 MIT
+
+
+# feature development:
+- encryption of api_keys
+- seesion handling on db, instead of jsonl 
+- update endpoint for agents, tools, providers.
+- add skills (need `updating code_agent`)
