@@ -260,7 +260,7 @@ wheels = [
 ]
 
 [[package]]
-name = "tau-syncer"
+name = "tau-hub"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
