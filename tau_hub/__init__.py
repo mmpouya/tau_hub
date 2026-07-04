@@ -1,3 +1,3 @@
-from tau_hub.registry import TauRegistry
+from tau_hub.registry import TauHub
 
-__all__ = ["TauRegistry"]
+__all__ = ["TauHub"]
