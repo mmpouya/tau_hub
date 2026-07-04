@@ -4,6 +4,7 @@ create/get/register/delete methods for agents, tools, and skills.
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Callable, Literal
 
@@ -62,19 +63,25 @@ class TauHub:
         provider_class: Literal["AnthropicProvider", "OpenAICompatibleProvider"],
         api_key: str,
         base_url: str | None,
+        model_name: str | None,
         **extra,
-    ) -> None:
+    ) -> str:
         """Store a provider class and its config."""
-        await self._store.put(
-            _PROVIDERS,
-            name,
-            {
-                "provider_class": provider_class,
-                "api_key": api_key or "",
-                "base_url": base_url or "",
-                **extra,
-            },
-        )
+        try:
+            await self._store.put(
+                _PROVIDERS,
+                name,
+                {
+                    "provider_class": provider_class,
+                    "api_key": api_key or "",
+                    "base_url": base_url or "",
+                    "model_name": model_name or "",
+                    **extra,
+                },
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to register provider {name}: {e}")
+        return name
 
     async def get_provider(self, name: str) -> tuple[ModelProvider, str]:
         """Load a provider definition by name."""
@@ -123,30 +130,34 @@ class TauHub:
     #####################################################################
     ##### Agents CRUD
 
-    async def create_agent(
+    async def register_agent(
         self,
         name: str,
         system: str,
         # tools: list[str] | None = None,
         # skills: list[str] | None = None,
         **extra,
-    ) -> None:
+    ) -> str:
         """Persist an agent definition.
         Note:
         the relation between agents and tools/skills is not enforced here;
         it's up to the user to ensure that the tools/skills exist
         and that the agent's config is consistent with them
         """
-        await self._store.put(
-            _AGENTS,
-            name,
-            {
-                "system": system,
-                # "tools": tools or [],
-                # "skills": skills or [],
-                **extra,
-            },
-        )
+        try:
+            await self._store.put(
+                _AGENTS,
+                name,
+                {
+                    "system": system,
+                    # "tools": tools or [],
+                    # "skills": skills or [],
+                    **extra,
+                },
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to create agent {name}: {e}")
+        return name
 
     async def get_agent(self, name: str) -> str:
         """Load an agent definition by name."""
@@ -187,20 +198,31 @@ class TauHub:
         self,
         name: str,
         description: str,
-        input_schema: dict | None = None,
+        input_schema: dict | None,
         executor: Callable | None = None,
         **extra,
-    ) -> None:
+    ) -> str:
         """Store a tool definition."""
-        await self._store.put(
-            _TOOLS,
-            name,
-            {
-                "description": description,
-                "input_schema": json.dumps({input_schema}) or "{}",
-                "executor": dill.dumps(executor) ** extra,
-            },
-        )
+
+        try:
+            executor_b64 = None
+            if executor:
+                executor_bytes = dill.dumps(executor)
+                executor_b64 = base64.b64encode(executor_bytes).decode("ascii")
+
+            await self._store.put(
+                _TOOLS,
+                name,
+                {
+                    "description": description,
+                    "input_schema": json.dumps(input_schema),
+                    "executor": executor_b64,
+                    **extra,
+                },
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to register tool {name}: {e}")
+        return name
 
     async def get_tool(self, name: str) -> AgentTool:
         data = await self._store.get(_TOOLS, name)
@@ -209,7 +231,7 @@ class TauHub:
                 name=name,
                 description=data.get("description", ""),
                 input_schema=json.loads(data.get("input_schema")),  # ty:ignore[invalid-argument-type]
-                executor=dill.loads(data.get("executor")),
+                executor=dill.loads(base64.b64decode(data["executor"])),
             )
         else:
             raise ValueError(f"Tool {name} had not get defined yet.")
@@ -278,19 +300,23 @@ class TauHub:
         tool_names: list[str] | None = None,
         # skill_names: list[str] | None = None,
         **extra,
-    ) -> None:
+    ) -> str:
         """Store a config."""
-        await self._store.put(
-            _CONFIG,
-            name,
-            {
-                "agent_name": agent_name,
-                "provider_name": provider_name,
-                "tool_names": tool_names or [],
-                # "skill_names": skill_names or [],
-                **extra,
-            },
-        )
+        try:
+            await self._store.put(
+                _CONFIG,
+                name,
+                {
+                    "agent_name": agent_name,
+                    "provider_name": provider_name,
+                    "tool_names": tool_names or [],
+                    # "skill_names": skill_names or [],
+                    **extra,
+                },
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to register config {name}: {e}")
+        return name
 
     async def get_config(self, name: str) -> AgentHarnessConfig:
         """Load a config by name."""
