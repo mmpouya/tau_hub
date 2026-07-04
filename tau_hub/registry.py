@@ -8,7 +8,11 @@ import json
 from typing import Callable
 
 import dill
-from tau_agent import AgentTool
+from tau_agent import (
+    AgentTool,
+    AgentToolResult,
+    JSONValue,  # let this import be there, sometimes they have usages in dumping executers
+)
 from tau_ai import ModelProvider
 
 from tau_hub.db.base import AgentStore
@@ -204,40 +208,40 @@ class TauHub:
     #####################################################################
     # Skills CRUD
 
-    async def register_skill(
-        self,
-        name: str,
-        description: str,
-        content: str,
-        config: dict | None = None,
-        **extra,
-    ) -> None:
-        """Store a skill prompt/config."""
-        await self._store.put(
-            _SKILLS,
-            name,
-            {
-                "name": name,
-                "description": description,
-                "content": content,
-                "config": config or {},
-                **extra,
-            },
-        )
+    # async def register_skill(
+    #     self,
+    #     name: str,
+    #     description: str,
+    #     content: str,
+    #     config: dict | None = None,
+    #     **extra,
+    # ) -> None:
+    #     """Store a skill prompt/config."""
+    #     await self._store.put(
+    #         _SKILLS,
+    #         name,
+    #         {
+    #             "name": name,
+    #             "description": description,
+    #             "content": content,
+    #             "config": config or {},
+    #             **extra,
+    #         },
+    #     )
 
-    async def get_skill(self, name: str):
-        data = await self._store.get(_SKILLS, name)
-        if not data:
-            raise ValueError(f"Skill {name} had not get defined yet.")
-        if data:
-            return AgentTool(
-                name=name,
-                description=data.get("description", ""),
-                input_schema=data.get(),
-            )
+    # async def get_skill(self, name: str):
+    #     data = await self._store.get(_SKILLS, name)
+    #     if not data:
+    #         raise ValueError(f"Skill {name} had not get defined yet.")
+    #     if data:
+    #         return AgentTool(
+    #             name=name,
+    #             description=data.get("description", ""),
+    #             input_schema=data.get(),
+    #         )
 
-    async def list_skills(self) -> list[dict]:
-        return await self._store.batch_get(_SKILLS)
+    # async def list_skills(self) -> list[dict]:
+    #     return await self._store.batch_get(_SKILLS)
 
-    async def delete_skill(self, name: str) -> None:
-        await self._store.delete(_SKILLS, name)
+    # async def delete_skill(self, name: str) -> None:
+    #     await self._store.delete(_SKILLS, name)
