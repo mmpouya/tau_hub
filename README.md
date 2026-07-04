@@ -81,8 +81,6 @@ async def main():
     async for event in harness.prompt("Hello, who are you?"):
         ...
 
-    # Clean up provider resources
-    await provider.aclose()
     
     # Persist an agent definition
     await registry.create_agent(
