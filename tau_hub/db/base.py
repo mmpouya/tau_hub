@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
 
 
-class AgentStore(ABC):
+class BaseAgentStore(ABC):
+    def __init__(self) -> None:
+        pass
+
     @abstractmethod
     async def get(self, collection: str, name: str) -> dict | None: ...
     @abstractmethod

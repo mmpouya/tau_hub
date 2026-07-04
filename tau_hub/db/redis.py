@@ -1,4 +1,5 @@
 """Redis backend (requires: pip install tau-hub[redis])."""
+
 from __future__ import annotations
 
 try:
@@ -10,10 +11,11 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 import json
-from tau_hub.db.base import AgentStore
+
+from tau_hub.db.base import BaseAgentStore
 
 
-class RedisStore(AgentStore):
+class RedisStore(BaseAgentStore):
     """Redis backend — documents stored as JSON strings under
     'prefix:collection:name' keys.
 
@@ -21,7 +23,9 @@ class RedisStore(AgentStore):
     overhead.
     """
 
-    def __init__(self, url: str = "redis://localhost:6379", prefix: str = "tau") -> None:
+    def __init__(
+        self, url: str = "redis://localhost:6379", prefix: str = "tau"
+    ) -> None:
         self._r = aioredis.from_url(url, decode_responses=True)
         self._prefix = prefix
 
@@ -36,8 +40,8 @@ class RedisStore(AgentStore):
         raw = await self._r.get(self._key(collection, name))
         return json.loads(raw) if raw is not None else None
 
-    async def put(self, collection: str, name: str, data: dict) -> None:
-        doc = {"name": name, **data}
+    async def put(self, collection: str, name: str, data: dict, **extra) -> None:
+        doc = {"name": name, **data, **extra}
         async with self._r.pipeline() as pipe:
             pipe.set(self._key(collection, name), json.dumps(doc))
             pipe.sadd(self._index_key(collection), name)

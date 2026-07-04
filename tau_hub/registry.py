@@ -5,19 +5,21 @@ create/get/register/delete methods for agents, tools, and skills.
 from __future__ import annotations
 
 import json
-from typing import Callable
+from typing import Callable, Literal
 
 import dill
 from tau_agent import (
+    AgentHarnessConfig,
     AgentTool,
     AgentToolResult,
     JSONValue,  # let this import be there, sometimes they have usages in dumping executers
 )
 from tau_ai import ModelProvider
 
-from tau_hub.db.base import AgentStore
+from tau_hub.db.base import BaseAgentStore
 
 # these are collection names in the underlying AgentStore
+_CONFIG = "config"
 _PROVIDERS = "providers"
 _AGENTS = "agents"
 _TOOLS = "tools"
@@ -36,7 +38,7 @@ class TauHub:
         For different DB backends, check the extra packages in tau-hub, e.g. `pip install tau-hub[mongo]`.
     """
 
-    def __init__(self, store: AgentStore | None = None) -> None:
+    def __init__(self, store: BaseAgentStore | None = None) -> None:
         if store is None:
             from tau_hub.db.tinydb import TinyDBStore
 
@@ -52,12 +54,12 @@ class TauHub:
         await self._store.init_db()
 
     #####################################################################
-    # Provider CRUD
+    ##### Provider CRUD
 
     async def register_provider(
         self,
         name: str,
-        provider_class: type,
+        provider_class: Literal["AnthropicProvider", "OpenAICompatibleProvider"],
         api_key: str,
         base_url: str | None,
         **extra,
@@ -67,7 +69,7 @@ class TauHub:
             _PROVIDERS,
             name,
             {
-                "provider_class": provider_class.__name__,
+                "provider_class": provider_class,
                 "api_key": api_key or "",
                 "base_url": base_url or "",
                 **extra,
@@ -89,7 +91,7 @@ class TauHub:
                     AnthropicProvider(provider_config),
                     data.get("model_name", ""),
                 )
-            case "OpenAIProvider":
+            case "OpenAICompatibleProvider":
                 # from tau_ai.openai import OpenAIProvider
                 from tau_ai import OpenAICompatibleConfig, OpenAICompatibleProvider
 
@@ -104,16 +106,22 @@ class TauHub:
             case _:
                 raise ValueError(f"Provider {name} has no provider_class defined.")
 
-    async def list_providers(self) -> list[dict]:
+    async def list_providers(self) -> dict[str, tuple[ModelProvider, str]]:
         """List all registered providers."""
-        return await self._store.batch_get(_PROVIDERS)
+        providers = await self._store.batch_get(_PROVIDERS)
+        result = {}
+        for provider in providers:
+            name = provider.get("name", "")
+            if name:
+                result[name] = await self.get_provider(name)
+        return result
 
     async def delete_provider(self, name: str) -> None:
         """Delete a provider definition by name."""
         await self._store.delete(_PROVIDERS, name)
 
     #####################################################################
-    # Agents CRUD
+    ##### Agents CRUD
 
     async def create_agent(
         self,
@@ -151,13 +159,20 @@ class TauHub:
     async def delete_agent(self, name: str) -> None:
         await self._store.delete(_AGENTS, name)
 
-    async def list_agents(self) -> list[dict]:
-        return await self._store.batch_get(_AGENTS)
+    async def list_agents(self) -> dict[str, str]:
+        agents = await self._store.batch_get(_AGENTS)
+        result = {}
+        for agent in agents:
+            name = agent.get("name", "")
+            if name:
+                result[name] = await self.get_agent(name)
+        return result
 
     #####################################################################
-    #  Tools CRUD
+    #####  Tools CRUD
 
     # FUNCTION HELPER
+
     # @staticmethod
     # def _store_ref(func) -> str:
     #     return f"{func.__module__}.{func.__qualname__}"
@@ -199,14 +214,20 @@ class TauHub:
         else:
             raise ValueError(f"Tool {name} had not get defined yet.")
 
-    async def list_tools(self) -> list[dict]:
-        return await self._store.batch_get(_TOOLS)
+    async def list_tools(self) -> dict[str, AgentTool]:
+        tools = await self._store.batch_get(_TOOLS)
+        result = {}
+        for tool in tools:
+            name = tool.get("name", "")
+            if name:
+                result[name] = await self.get_tool(name)
+        return result
 
     async def delete_tool(self, name: str) -> None:
         await self._store.delete(_TOOLS, name)
 
     #####################################################################
-    # Skills CRUD
+    ##### Skills CRUD
 
     # async def register_skill(
     #     self,
@@ -245,3 +266,60 @@ class TauHub:
 
     # async def delete_skill(self, name: str) -> None:
     #     await self._store.delete(_SKILLS, name)
+
+    #####################################################################
+    ##### Config CRUD
+
+    async def register_config(
+        self,
+        name: str,
+        agent_name: str,
+        provider_name: str,
+        tool_names: list[str] | None = None,
+        # skill_names: list[str] | None = None,
+        **extra,
+    ) -> None:
+        """Store a config."""
+        await self._store.put(
+            _CONFIG,
+            name,
+            {
+                "agent_name": agent_name,
+                "provider_name": provider_name,
+                "tool_names": tool_names or [],
+                # "skill_names": skill_names or [],
+                **extra,
+            },
+        )
+
+    async def get_config(self, name: str) -> AgentHarnessConfig:
+        """Load a config by name."""
+        data = await self._store.get(_CONFIG, name)
+        if not data:
+            raise ValueError(f"Config {name} had not get defined yet.")
+        provider, model_name = await self.get_provider(data.get("provider_name", ""))
+        agent = await self.get_agent(data.get("agent_name", ""))
+        tools = []
+        for tool_name in data.get("tool_names", []):
+            tool = await self.get_tool(tool_name)
+            tools.append(tool)
+        return AgentHarnessConfig(
+            provider=provider,
+            model=model_name,
+            system=agent,
+            tools=tools,
+            # skills=data.get("skill_names", []),
+        )
+
+    async def list_configs(self) -> dict[str, AgentHarnessConfig]:
+        """List all registered configs."""
+        configs = await self._store.batch_get(_CONFIG)
+        result = {}
+        for config in configs:
+            name = config.get("name", "")
+            if name:
+                result[name] = await self.get_config(name)
+        return result
+
+    async def delete_config(self, name: str) -> None:
+        await self._store.delete(_CONFIG, name)

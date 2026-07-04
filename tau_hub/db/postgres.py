@@ -1,4 +1,5 @@
 """PostgreSQL backend (requires: pip install tau-hub[postgres])."""
+
 from __future__ import annotations
 
 try:
@@ -10,7 +11,8 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 import json
-from tau_hub.db.base import AgentStore
+
+from tau_hub.db.base import BaseAgentStore
 
 _INIT_SQL = """
 CREATE TABLE IF NOT EXISTS documents (
@@ -22,7 +24,7 @@ CREATE TABLE IF NOT EXISTS documents (
 """
 
 
-class PostgresStore(AgentStore):
+class PostgresStore(BaseAgentStore):
     """PostgreSQL backend using asyncpg.
 
     Uses a single 'documents' table with (collection, name, data jsonb).
@@ -36,6 +38,13 @@ class PostgresStore(AgentStore):
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
         self._pool: asyncpg.Pool | None = None
+
+    async def init_db(self) -> None:
+        """Initialize the database.
+        Create the documents table if it doesn't exist.
+        """
+        async with self._p.acquire() as conn:
+            await conn.execute(_INIT_SQL)
 
     async def connect(self) -> None:
         self._pool = await asyncpg.create_pool(self._dsn)
@@ -62,13 +71,14 @@ class PostgresStore(AgentStore):
     async def get(self, collection: str, name: str) -> dict | None:
         row = await self._p.fetchrow(
             "SELECT data FROM documents WHERE collection=$1 AND name=$2",
-            collection, name,
+            collection,
+            name,
         )
         if row is None:
             return None
         return json.loads(row["data"])
 
-    async def put(self, collection: str, name: str, data: dict) -> None:
+    async def put(self, collection: str, name: str, data: dict, **extra) -> None:
         await self._p.execute(
             """
             INSERT INTO documents (collection, name, data)
@@ -76,13 +86,16 @@ class PostgresStore(AgentStore):
             ON CONFLICT (collection, name)
             DO UPDATE SET data = EXCLUDED.data
             """,
-            collection, name, json.dumps(data),
+            collection,
+            name,
+            json.dumps({**data, **extra}),
         )
 
     async def delete(self, collection: str, name: str) -> None:
         await self._p.execute(
             "DELETE FROM documents WHERE collection=$1 AND name=$2",
-            collection, name,
+            collection,
+            name,
         )
 
     async def batch_get(self, collection: str) -> list[dict]:

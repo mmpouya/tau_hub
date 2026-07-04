@@ -11,10 +11,10 @@ except ImportError as exc:
 
 import asyncio
 
-from tau_hub.db.base import AgentStore
+from tau_hub.db.base import BaseAgentStore
 
 
-class TinyDBStore(AgentStore):
+class TinyDBStore(BaseAgentStore):
     """Async-friendly wrapper around TinyDB.
 
     TinyDB itself is synchronous;
