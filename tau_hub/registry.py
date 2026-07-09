@@ -39,13 +39,29 @@ class TauHub:
         For different DB backends, check the extra packages in tau-hub, e.g. `pip install tau-hub[mongo]`.
     """
 
-    def __init__(self, store: BaseAgentStore | None = None) -> None:
-        if store is None:
+    def __init__(self, store_url: str | None = None) -> None:
+        if store_url is None:
             from tau_hub.db.tinydb import TinyDBStore
 
             self._store = TinyDBStore()
+        elif store_url.startswith("mongo"):
+            from tau_hub.db.mongo import MongoStore
+
+            self._store = MongoStore(store_url)
+        elif store_url.startswith("redis"):
+            from tau_hub.db.redis import RedisStore
+
+            self._store = RedisStore(store_url)
+        elif store_url.startswith("postgres"):
+            from tau_hub.db.postgres import PostgresStore
+
+            self._store = PostgresStore(store_url)
+        elif store_url.startswith("sqlite"):
+            from tau_hub.db.sqlite import SQLiteStore
+
+            self._store = SQLiteStore(store_url)
         else:
-            self._store = store
+            raise ValueError(f"Unsupported store_url: {store_url}")
 
     async def init_db(self) -> None:
         """Initialize the underlying database.
