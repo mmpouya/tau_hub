@@ -1,0 +1,10 @@
+# Core runtime dependencies (see pyproject.toml for authoritative pins)
+tinydb>=4.8
+tau-ai>=0.1.0
+dill>=0.4.1
+cryptography>=42.0
+
+# Optional backends
+# pymongo>=4.6      # MongoDB  -> pip install tau-hub[mongo]
+# redis>=5.0        # Redis    -> pip install tau-hub[redis]
+# asyncpg>=0.29     # Postgres -> pip install tau-hub[postgres]

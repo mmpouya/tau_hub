@@ -1,14 +1,18 @@
 [project]
 name = "tau-hub"
-version = "0.1.21"
-description = "Cross-service agent registry for tau_agent — create, store, and retrieve agents, tools, and skills from a database."
+version = "0.2.0"
+description = "Cross-service registry and persistence layer for tau_agent — providers, agents, tools, skills, configs, and chat sessions, with encrypted API keys."
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "MIT" }
+authors = [{ name = "mmpouya" }]
+keywords = ["tau", "agents", "llm", "registry", "sessions"]
+
 dependencies = [
     "tinydb>=4.8",
     "tau-ai>=0.1.0",
     "dill>=0.4.1",
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +25,13 @@ all = [
     "tau-hub[postgres]",
 ]
 
+[project.urls]
+Homepage = "https://github.com/mmpouya/tau_hub"
+Repository = "https://github.com/mmpouya/tau_hub"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tau_hub"]
