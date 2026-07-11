@@ -1,4 +1,4 @@
-"""TinyDB backend — default, zero-dependency, single-writer."""
+"""TinyDB backend — default, zero-configuration, single-writer."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import os
 
 try:
     from tinydb import Query, TinyDB
-except ImportError as exc:
+except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "TinyDB is required for TinyDBStore.\nInstall it with: pip install tau-hub"
     ) from exc
@@ -19,38 +19,44 @@ logger = logging.getLogger(__name__)
 
 
 class TinyDBStore(BaseAgentStore):
-    """Async-friendly wrapper around TinyDB.
+    """Async-friendly wrapper around TinyDB (pure-Python JSON file store).
 
-    TinyDB itself is synchronous;
-    here, every operation is dispatched to a thread pool
-    so callers can await it without blocking the event loop. ^-^
-    this is not vibe coded BTW
+    TinyDB itself is synchronous; every operation is dispatched to a thread
+    pool so callers can ``await`` it without blocking the event loop.
+
+    Best for single-process / single-writer deployments. For concurrent
+    multi-process writes use :class:`~tau_hub.db.sqlite.SQLiteStore` or
+    :class:`~tau_hub.db.postgres.PostgresStore`.
+
+    Parameters
+    ----------
+    path:
+        Path of the JSON database file. Parent directories are created
+        automatically.
     """
 
     def __init__(self, path: str = "./.tau_hub/tau_hub.json") -> None:
         try:
-            if path.startswith("./.tau_hub/"):
-                os.makedirs(os.path.dirname(path), exist_ok=True)
+            directory = os.path.dirname(path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
             self._db = TinyDB(path)
         except Exception:
             logger.exception("Failed to initialize TinyDBStore at path=%s", path)
             raise
 
-    async def init_db(self) -> None:
-        try:
-            pass
-        except Exception:
-            logger.exception("Failed to init_db")
-            raise
-
     def _table(self, collection: str):
+        """Return the TinyDB table backing *collection*."""
         return self._db.table(collection)
 
     async def _run(self, fn, *args):
+        """Run a synchronous TinyDB call in the default thread pool."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, fn, *args)
 
     async def get(self, collection: str, name: str) -> dict | None:
+        """Return the document stored under ``(collection, name)`` or ``None``."""
+
         def _get():
             q = Query()
             return self._table(collection).get(q.name == name)
@@ -64,6 +70,8 @@ class TinyDBStore(BaseAgentStore):
             raise
 
     async def put(self, collection: str, name: str, data: dict, **extra) -> None:
+        """Insert or replace the document stored under ``(collection, name)``."""
+
         def _put():
             q = Query()
             doc = {"name": name, **data, **extra}
@@ -78,6 +86,8 @@ class TinyDBStore(BaseAgentStore):
             raise
 
     async def delete(self, collection: str, name: str) -> None:
+        """Delete the document stored under ``(collection, name)``."""
+
         def _delete():
             q = Query()
             self._table(collection).remove(q.name == name)
@@ -91,6 +101,8 @@ class TinyDBStore(BaseAgentStore):
             raise
 
     async def batch_get(self, collection: str) -> list[dict]:
+        """Return every document in *collection*."""
+
         def _batch():
             return self._table(collection).all()
 
@@ -99,3 +111,7 @@ class TinyDBStore(BaseAgentStore):
         except Exception:
             logger.exception("Failed to batch_get: collection=%s", collection)
             raise
+
+    async def close(self) -> None:
+        """Close the underlying TinyDB file handle."""
+        await self._run(self._db.close)

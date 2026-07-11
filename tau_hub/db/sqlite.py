@@ -1,70 +1,137 @@
+"""SQLite backend — file-based, ACID, safe for multiple local writers.
+
+Uses a single generic ``documents`` table (``collection``, ``name``,
+``data`` JSON) so it can store any collection — providers, agents, tools,
+skills, configs, and chat sessions — without schema migrations.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
 import sqlite3
 
 from tau_hub.db.base import BaseAgentStore
 
-# these are tables names in the underlying AgentStore
-_CONFIG = "config"
-_PROVIDERS = "providers"
-_AGENTS = "agents"
-_TOOLS = "tools"
-_SKILLS = "skills"
+_INIT_SQL = """
+CREATE TABLE IF NOT EXISTS documents (
+    collection TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    data       TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (collection, name)
+);
+"""
 
 
 class SQLiteStore(BaseAgentStore):
-    def __init__(self, db_path: str):
-        self.db_path = db_path
-        # Initialize SQLite connection here
+    """SQLite backend using the standard library ``sqlite3`` module.
 
-        self.conn = sqlite3.connect(self.db_path)
+    Synchronous ``sqlite3`` calls are dispatched to a thread pool so callers
+    can ``await`` them. WAL journaling is enabled so concurrent local readers
+    don't block the writer.
 
-    def init_db(self):
-        # Create the necessary tables in SQLite
-        cursor = self.conn.cursor()
-        cursor.execute(
-            f"CREATE TABLE IF NOT EXISTS {_CONFIG} (name TEXT PRIMARY KEY, value TEXT)"
-        )
-        cursor.execute(
-            f"CREATE TABLE IF NOT EXISTS {_PROVIDERS} (name TEXT PRIMARY KEY, provider_class TEXT, api_key TEXT, base_url TEXT, model_name TEXT)"
-        )
-        cursor.execute(
-            f"CREATE TABLE IF NOT EXISTS {_AGENTS} (name TEXT PRIMARY KEY, system TEXT)"
-        )
-        cursor.execute(
-            f"CREATE TABLE IF NOT EXISTS {_TOOLS} (name TEXT PRIMARY KEY, description TEXT)"
-        )
-        cursor.execute(
-            f"CREATE TABLE IF NOT EXISTS {_SKILLS} (name TEXT PRIMARY KEY, description TEXT)"
-        )
-        self.conn.commit()
+    Parameters
+    ----------
+    url_or_path:
+        Either a filesystem path (``"./tau_hub.sqlite3"``), an in-memory
+        database (``":memory:"``), or a URL of the form
+        ``sqlite:///path/to/db.sqlite3``.
+    """
+
+    def __init__(self, url_or_path: str = "./.tau_hub/tau_hub.sqlite3") -> None:
+        self.db_path = self._path_from_url(url_or_path)
+        # check_same_thread=False: access is serialized through the internal
+        # lock below, but calls may run on any thread-pool thread.
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute(_INIT_SQL)
+        self._conn.commit()
+        self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _path_from_url(url_or_path: str) -> str:
+        """Strip an optional ``sqlite:`` URL scheme, returning a plain path."""
+        for prefix in ("sqlite:///", "sqlite://", "sqlite:"):
+            if url_or_path.startswith(prefix):
+                remainder = url_or_path[len(prefix) :]
+                return remainder or "./.tau_hub/tau_hub.sqlite3"
+        return url_or_path
+
+    async def _run(self, fn, *args):
+        """Run a synchronous sqlite3 call in the thread pool, serialized."""
+        async with self._lock:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, fn, *args)
+
+    async def init_db(self) -> None:
+        """Create the ``documents`` table if needed (also done in ``__init__``)."""
+
+        def _init():
+            self._conn.execute(_INIT_SQL)
+            self._conn.commit()
+
+        await self._run(_init)
 
     async def get(self, collection: str, name: str) -> dict | None:
-        cursor = self.conn.cursor()
-        cursor.execute(f"SELECT * FROM {collection} WHERE name = ?", (name,))
-        row = cursor.fetchone()
-        if row:
-            return dict(zip([column[0] for column in cursor.description], row))
-        return None
+        """Return the document stored under ``(collection, name)`` or ``None``."""
+
+        def _get():
+            row = self._conn.execute(
+                "SELECT data FROM documents WHERE collection = ? AND name = ?",
+                (collection, name),
+            ).fetchone()
+            if row is None:
+                return None
+            doc = json.loads(row[0])
+            doc.setdefault("name", name)
+            return doc
+
+        return await self._run(_get)
 
     async def put(self, collection: str, name: str, data: dict, **extra) -> None:
-        cursor = self.conn.cursor()
-        columns = ", ".join(data.keys())
-        placeholders = ", ".join("?" for _ in data)
-        values = list(data.values())
-        cursor.execute(
-            f"INSERT OR REPLACE INTO {collection} (name, {columns}) VALUES (?, {placeholders})",
-            [name] + values,
-        )
-        self.conn.commit()
+        """Insert or replace the document stored under ``(collection, name)``."""
+
+        def _put():
+            doc = {"name": name, **data, **extra}
+            self._conn.execute(
+                "INSERT OR REPLACE INTO documents (collection, name, data) "
+                "VALUES (?, ?, ?)",
+                (collection, name, json.dumps(doc, ensure_ascii=False)),
+            )
+            self._conn.commit()
+
+        await self._run(_put)
 
     async def delete(self, collection: str, name: str) -> None:
-        cursor = self.conn.cursor()
-        cursor.execute(f"DELETE FROM {collection} WHERE name = ?", (name,))
-        self.conn.commit()
+        """Delete the document stored under ``(collection, name)``."""
+
+        def _delete():
+            self._conn.execute(
+                "DELETE FROM documents WHERE collection = ? AND name = ?",
+                (collection, name),
+            )
+            self._conn.commit()
+
+        await self._run(_delete)
 
     async def batch_get(self, collection: str) -> list[dict]:
-        cursor = self.conn.cursor()
-        cursor.execute(f"SELECT * FROM {collection}")
-        rows = cursor.fetchall()
-        return [
-            dict(zip([column[0] for column in cursor.description], row)) for row in rows
-        ]
+        """Return every document in *collection*."""
+
+        def _batch():
+            rows = self._conn.execute(
+                "SELECT name, data FROM documents WHERE collection = ?",
+                (collection,),
+            ).fetchall()
+            docs = []
+            for name, data in rows:
+                doc = json.loads(data)
+                doc.setdefault("name", name)
+                docs.append(doc)
+            return docs
+
+        return await self._run(_batch)
+
+    async def close(self) -> None:
+        """Close the underlying SQLite connection."""
+
+        await self._run(self._conn.close)
