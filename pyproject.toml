@@ -1,6 +1,6 @@
 [project]
 name = "tau-hub"
-version = "0.2.0"
+version = "0.2.1"
 description = "Cross-service registry and persistence layer for tau_agent — providers, agents, tools, skills, configs, and chat sessions, with encrypted API keys."
 readme = "README.md"
 requires-python = ">=3.14"

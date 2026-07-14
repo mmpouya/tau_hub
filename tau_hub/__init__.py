@@ -21,7 +21,7 @@ from tau_hub.models import Skill
 from tau_hub.registry import SECRET_KEY_ENV_VAR, TauHub
 from tau_hub.sessions import SESSIONS_COLLECTION, HubSessionStorage
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "SECRET_KEY_ENV_VAR",
