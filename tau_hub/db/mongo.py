@@ -42,9 +42,10 @@ class MongoStore(BaseAgentStore):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, fn, *args)
 
-    async def get(self, collection: str, name: str) -> dict | None:
+    async def get(self, collection: str, name: str, **filters) -> dict | None:
         def _get():
-            return self._col(collection).find_one({"name": name}, {"_id": 0})
+            query = {"name": name, **filters}
+            return self._col(collection).find_one(query, {"_id": 0})
 
         return await self._run(_get)
 
@@ -61,9 +62,9 @@ class MongoStore(BaseAgentStore):
 
         await self._run(_delete)
 
-    async def batch_get(self, collection: str) -> list[dict]:
+    async def batch_get(self, collection: str, **filters) -> list[dict]:
         def _batch():
-            return list(self._col(collection).find({}, {"_id": 0}))
+            return list(self._col(collection).find(filters or {}, {"_id": 0}))
 
         return await self._run(_batch)
 

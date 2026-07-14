@@ -45,6 +45,28 @@ class SQLiteStoreTests(unittest.IsolatedAsyncioTestCase):
         docs = await self.store.batch_get("skills")
         self.assertEqual({d["name"] for d in docs}, {"s1", "s2"})
 
+    async def test_batch_get_with_filters(self):
+        await self.store.put("agents", "a1", {"system": "hi", "service": "translation"})
+        await self.store.put("agents", "a2", {"system": "hello", "service": "translation"})
+        await self.store.put("agents", "a3", {"system": "hey", "service": "summarization"})
+        docs = await self.store.batch_get("agents", service="translation")
+        self.assertEqual({d["name"] for d in docs}, {"a1", "a2"})
+
+    async def test_batch_get_with_filters_no_match(self):
+        await self.store.put("agents", "a1", {"system": "hi", "service": "x"})
+        docs = await self.store.batch_get("agents", service="y")
+        self.assertEqual(docs, [])
+
+    async def test_get_with_filters_match(self):
+        await self.store.put("agents", "a", {"system": "hi", "service": "x"})
+        doc = await self.store.get("agents", "a", service="x")
+        self.assertEqual(doc["name"], "a")
+
+    async def test_get_with_filters_no_match(self):
+        await self.store.put("agents", "a", {"system": "hi", "service": "x"})
+        doc = await self.store.get("agents", "a", service="y")
+        self.assertIsNone(doc)
+
     async def test_append_to_list_creates_and_appends(self):
         await self.store.append_to_list("sessions", "s", "entries", {"n": 1})
         await self.store.append_to_list("sessions", "s", "entries", {"n": 2})

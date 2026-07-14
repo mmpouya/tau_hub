@@ -54,12 +54,15 @@ class TinyDBStore(BaseAgentStore):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, fn, *args)
 
-    async def get(self, collection: str, name: str) -> dict | None:
+    async def get(self, collection: str, name: str, **filters) -> dict | None:
         """Return the document stored under ``(collection, name)`` or ``None``."""
 
         def _get():
             q = Query()
-            return self._table(collection).get(q.name == name)
+            condition = q.name == name
+            for key, value in filters.items():
+                condition = condition & (getattr(q, key) == value)
+            return self._table(collection).get(condition)
 
         try:
             return await self._run(_get)
@@ -100,11 +103,18 @@ class TinyDBStore(BaseAgentStore):
             )
             raise
 
-    async def batch_get(self, collection: str) -> list[dict]:
-        """Return every document in *collection*."""
+    async def batch_get(self, collection: str, **filters) -> list[dict]:
+        """Return every document in *collection* matching all ``**filters``."""
 
         def _batch():
-            return self._table(collection).all()
+            if not filters:
+                return self._table(collection).all()
+            q = Query()
+            conditions = [getattr(q, key) == value for key, value in filters.items()]
+            combined = conditions[0]
+            for c in conditions[1:]:
+                combined = combined & c
+            return self._table(collection).search(combined)
 
         try:
             return await self._run(_batch)

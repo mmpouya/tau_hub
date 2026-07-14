@@ -83,8 +83,11 @@ class TauHub:
         store_url: str | None = None,
         *,
         secret_key: str | None = None,
+        store: BaseAgentStore | None = None,
     ) -> None:
-        if store_url is None:
+        if store is not None:
+            self._store = store
+        elif store_url is None:
             from tau_hub.db.tinydb import TinyDBStore
 
             self._store = TinyDBStore()
@@ -244,7 +247,7 @@ class TauHub:
             case _:
                 raise ValueError(f"Provider {name} has no provider_class defined.")
 
-    async def get_provider(self, name: str) -> tuple[ModelProvider, str]:
+    async def get_provider(self, name: str, **filters) -> tuple[ModelProvider, str]:
         """Load a provider by name and return ``(provider, model_name)``.
 
         The stored API key is decrypted transparently.
@@ -252,18 +255,18 @@ class TauHub:
         Raises
         ------
         ValueError
-            If no provider with that name is registered.
+            If no provider with that name is registered (or filters don't match).
         MissingSecretKeyError
             If the key is encrypted and the hub has no secret key.
         """
-        data = await self._store.get(_PROVIDERS, name)
+        data = await self._store.get(_PROVIDERS, name, **filters)
         if data is None:
             raise ValueError(f"Provider {name} is not registered!")
         return self._provider_from_doc(name, data)
 
-    async def list_providers(self) -> dict[str, tuple[ModelProvider, str]]:
+    async def list_providers(self, **filters) -> dict[str, tuple[ModelProvider, str]]:
         """Return all registered providers as ``{name: (provider, model_name)}``."""
-        providers = await self._store.batch_get(_PROVIDERS)
+        providers = await self._store.batch_get(_PROVIDERS, **filters)
         result = {}
         for data in providers:
             name = data.get("name", "")
@@ -320,15 +323,15 @@ class TauHub:
             raise ValueError(f"Failed to create agent {name}: {e}") from e
         return name
 
-    async def get_agent(self, name: str) -> str:
+    async def get_agent(self, name: str, **filters) -> str:
         """Return the system prompt of the agent registered under *name*.
 
         Raises
         ------
         ValueError
-            If no agent with that name is registered.
+            If no agent with that name is registered (or filters don't match).
         """
-        data = await self._store.get(_AGENTS, name)
+        data = await self._store.get(_AGENTS, name, **filters)
         if data:
             return data.get("system", "")
         raise ValueError(f"Agent {name} had not been registered yet.")
@@ -337,9 +340,9 @@ class TauHub:
         """Delete an agent definition by name (no-op when missing)."""
         await self._store.delete(_AGENTS, name)
 
-    async def list_agents(self) -> dict[str, str]:
+    async def list_agents(self, **filters) -> dict[str, str]:
         """Return all registered agents as ``{name: system_prompt}``."""
-        agents = await self._store.batch_get(_AGENTS)
+        agents = await self._store.batch_get(_AGENTS, **filters)
         result = {}
         for agent in agents:
             name = agent.get("name", "")
@@ -408,18 +411,18 @@ class TauHub:
             raise ValueError(f"Failed to register tool {name}: {e}") from e
         return name
 
-    async def get_tool(self, name: str) -> AgentTool:
+    async def get_tool(self, name: str, **filters) -> AgentTool:
         """Load a tool by name and return a ready-to-use ``AgentTool``.
 
         Raises
         ------
         ValueError
-            If no tool with that name is registered.
+            If no tool with that name is registered (or filters don't match).
         """
         import dill
         from tau_agent import AgentTool
 
-        data = await self._store.get(_TOOLS, name)
+        data = await self._store.get(_TOOLS, name, **filters)
         if data:
             executor_b64 = data.get("executor")
             return AgentTool(
@@ -432,9 +435,9 @@ class TauHub:
             )
         raise ValueError(f"Tool {name} had not been defined yet.")
 
-    async def list_tools(self) -> dict[str, AgentTool]:
+    async def list_tools(self, **filters) -> dict[str, AgentTool]:
         """Return all registered tools as ``{name: AgentTool}``."""
-        tools = await self._store.batch_get(_TOOLS)
+        tools = await self._store.batch_get(_TOOLS, **filters)
         result = {}
         for tool in tools:
             name = tool.get("name", "")
@@ -496,15 +499,15 @@ class TauHub:
             raise ValueError(f"Failed to register skill {name}: {e}") from e
         return name
 
-    async def get_skill(self, name: str) -> Skill:
+    async def get_skill(self, name: str, **filters) -> Skill:
         """Load a skill by name.
 
         Raises
         ------
         ValueError
-            If no skill with that name is registered.
+            If no skill with that name is registered (or filters don't match).
         """
-        data = await self._store.get(_SKILLS, name)
+        data = await self._store.get(_SKILLS, name, **filters)
         if not data:
             raise ValueError(f"Skill {name} had not been defined yet.")
         return Skill(
@@ -514,9 +517,9 @@ class TauHub:
             config=data.get("config") or {},
         )
 
-    async def list_skills(self) -> dict[str, Skill]:
+    async def list_skills(self, **filters) -> dict[str, Skill]:
         """Return all registered skills as ``{name: Skill}``."""
-        skills = await self._store.batch_get(_SKILLS)
+        skills = await self._store.batch_get(_SKILLS, **filters)
         result = {}
         for data in skills:
             name = data.get("name", "")
@@ -588,7 +591,7 @@ class TauHub:
             raise ValueError(f"Failed to register config {name}: {e}") from e
         return name
 
-    async def get_config(self, name: str) -> AgentHarnessConfig:
+    async def get_config(self, name: str, **filters) -> AgentHarnessConfig:
         """Assemble a ready-to-run ``AgentHarnessConfig`` from a stored config.
 
         Loads the referenced provider (decrypting its API key), agent, tools,
@@ -602,7 +605,7 @@ class TauHub:
         """
         from tau_agent import AgentHarnessConfig
 
-        data = await self._store.get(_CONFIG, name)
+        data = await self._store.get(_CONFIG, name, **filters)
         if not data:
             raise ValueError(f"Config {name} had not been defined yet.")
         provider, model_name = await self.get_provider(data.get("provider_name", ""))
@@ -623,9 +626,9 @@ class TauHub:
             tools=tools,
         )
 
-    async def list_configs(self) -> dict[str, AgentHarnessConfig]:
+    async def list_configs(self, **filters) -> dict[str, AgentHarnessConfig]:
         """Return all registered configs as ``{name: AgentHarnessConfig}``."""
-        configs = await self._store.batch_get(_CONFIG)
+        configs = await self._store.batch_get(_CONFIG, **filters)
         result = {}
         for config in configs:
             name = config.get("name", "")
@@ -655,9 +658,9 @@ class TauHub:
         """
         return HubSessionStorage(self._store, session_id)
 
-    async def list_sessions(self) -> dict[str, int]:
+    async def list_sessions(self, **filters) -> dict[str, int]:
         """Return all stored sessions as ``{session_id: entry_count}``."""
-        docs = await self._store.batch_get(SESSIONS_COLLECTION)
+        docs = await self._store.batch_get(SESSIONS_COLLECTION, **filters)
         result = {}
         for doc in docs:
             name = doc.get("name", "")

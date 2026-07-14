@@ -45,10 +45,11 @@ class RedisStore(BaseAgentStore):
         """Return the key of the Redis Set that tracks all names in a collection."""
         return f"{self._prefix}:{collection}:__index__"
 
-    async def get(self, collection: str, name: str) -> dict | None:
+    async def get(self, collection: str, name: str, **filters) -> dict | None:
         """Return the document stored under ``(collection, name)`` or ``None``."""
         raw = await self._r.get(self._key(collection, name))
-        return json.loads(raw) if raw is not None else None
+        doc = json.loads(raw) if raw is not None else None
+        return self._check_filters(doc, **filters)
 
     async def put(self, collection: str, name: str, data: dict, **extra) -> None:
         """Insert or replace the document stored under ``(collection, name)``."""
@@ -65,14 +66,15 @@ class RedisStore(BaseAgentStore):
             pipe.srem(self._index_key(collection), name)
             await pipe.execute()
 
-    async def batch_get(self, collection: str) -> list[dict]:
-        """Return every document in *collection*."""
+    async def batch_get(self, collection: str, **filters) -> list[dict]:
+        """Return every document in *collection* matching all ``**filters``."""
         names = await self._r.smembers(self._index_key(collection))
         if not names:
             return []
         keys = [self._key(collection, n) for n in names]
         raws = await self._r.mget(keys)
-        return [json.loads(r) for r in raws if r is not None]
+        docs = [json.loads(r) for r in raws if r is not None]
+        return self._filter_docs(docs, **filters)
 
     async def close(self) -> None:
         """Close the underlying Redis connection pool."""

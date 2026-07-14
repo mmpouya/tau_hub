@@ -8,8 +8,11 @@ interchangeable.
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any
+
+_FILTER_KEY_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 class BaseAgentStore(ABC):
@@ -21,10 +24,11 @@ class BaseAgentStore(ABC):
     """
 
     @abstractmethod
-    async def get(self, collection: str, name: str) -> dict | None:
+    async def get(self, collection: str, name: str, **filters) -> dict | None:
         """Return the document stored under ``(collection, name)``.
-        Returns ``None`` when no such document exists. The returned dict
-        includes the ``name`` key.
+        Returns ``None`` when no such document exists or when the document
+        does not match all supplied ``**filters``. The returned dict includes
+        the ``name`` key.
         """
 
     @abstractmethod
@@ -39,8 +43,37 @@ class BaseAgentStore(ABC):
         """Delete the document under ``(collection, name)``. Missing documents are a no-op."""
 
     @abstractmethod
-    async def batch_get(self, collection: str) -> list[dict]:
-        """Return every document in *collection* (order unspecified)."""
+    async def batch_get(self, collection: str, **filters) -> list[dict]:
+        """Return every document in *collection* that matches all supplied
+        ``**filters``. When no filters are given, returns every document
+        in the collection (order unspecified).
+        """
+
+    @staticmethod
+    def _check_filters(doc: dict | None, **filters) -> dict | None:
+        """Return *doc* when it matches all ``**filters``, or ``None``."""
+        if doc is None:
+            return None
+        if filters and not all(doc.get(k) == v for k, v in filters.items()):
+            return None
+        return doc
+
+    @staticmethod
+    def _filter_docs(docs: list[dict], **filters) -> list[dict]:
+        """Return only those documents in *docs* that match all ``**filters``."""
+        if not filters:
+            return docs
+        return [d for d in docs if all(d.get(k) == v for k, v in filters.items())]
+
+    @staticmethod
+    def _validate_filter_keys(**filters) -> None:
+        """Raise ``ValueError`` if any filter key contains unsafe characters."""
+        for key in filters:
+            if not _FILTER_KEY_RE.match(key):
+                raise ValueError(
+                    f"Filter key {key!r} contains unsafe characters. "
+                    "Only alphanumeric and underscore are allowed."
+                )
 
     async def init_db(self) -> None:
         """Create tables/collections/indexes if the backend needs them.

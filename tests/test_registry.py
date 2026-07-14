@@ -109,6 +109,18 @@ class AgentAndSkillTests(unittest.IsolatedAsyncioTestCase):
         await self.hub.register_agent("a", system="v2")
         self.assertEqual(await self.hub.get_agent("a"), "v2")
 
+    async def test_list_agents_with_filters(self):
+        await self.hub.register_agent("a1", system="s1", service="translation")
+        await self.hub.register_agent("a2", system="s2", service="translation")
+        await self.hub.register_agent("a3", system="s3", service="summarization")
+        result = await self.hub.list_agents(service="translation")
+        self.assertEqual(set(result), {"a1", "a2"})
+
+    async def test_get_agent_with_filters_no_match(self):
+        await self.hub.register_agent("a", system="s", service="x")
+        with self.assertRaises(ValueError):
+            await self.hub.get_agent("a", service="y")
+
 
 class SessionApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

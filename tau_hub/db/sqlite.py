@@ -72,13 +72,20 @@ class SQLiteStore(BaseAgentStore):
 
         await self._run(_init)
 
-    async def get(self, collection: str, name: str) -> dict | None:
+    async def get(self, collection: str, name: str, **filters) -> dict | None:
         """Return the document stored under ``(collection, name)`` or ``None``."""
 
         def _get():
+            self._validate_filter_keys(**filters)
+            conditions = ["collection = ?", "name = ?"]
+            params = [collection, name]
+            for key, value in filters.items():
+                conditions.append(f"json_extract(data, '$.{key}') = ?")
+                params.append(value)
+            where = " AND ".join(conditions)
             row = self._conn.execute(
-                "SELECT data FROM documents WHERE collection = ? AND name = ?",
-                (collection, name),
+                f"SELECT data FROM documents WHERE {where}",
+                params,
             ).fetchone()
             if row is None:
                 return None
@@ -114,13 +121,20 @@ class SQLiteStore(BaseAgentStore):
 
         await self._run(_delete)
 
-    async def batch_get(self, collection: str) -> list[dict]:
-        """Return every document in *collection*."""
+    async def batch_get(self, collection: str, **filters) -> list[dict]:
+        """Return every document in *collection* matching all ``**filters``."""
 
         def _batch():
+            self._validate_filter_keys(**filters)
+            conditions = ["collection = ?"]
+            params = [collection]
+            for key, value in filters.items():
+                conditions.append(f"json_extract(data, '$.{key}') = ?")
+                params.append(value)
+            where = " AND ".join(conditions)
             rows = self._conn.execute(
-                "SELECT name, data FROM documents WHERE collection = ?",
-                (collection,),
+                f"SELECT name, data FROM documents WHERE {where}",
+                params,
             ).fetchall()
             docs = []
             for name, data in rows:

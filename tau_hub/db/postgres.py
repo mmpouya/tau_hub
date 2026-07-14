@@ -80,12 +80,20 @@ class PostgresStore(BaseAgentStore):
             )
         return self._pool
 
-    async def get(self, collection: str, name: str) -> dict | None:
+    async def get(self, collection: str, name: str, **filters) -> dict | None:
         """Return the document stored under ``(collection, name)`` or ``None``."""
+        self._validate_filter_keys(**filters)
+        conditions = ["collection = $1", "name = $2"]
+        params = [collection, name]
+        idx = 3
+        for key, value in filters.items():
+            conditions.append(f"data->>'{key}' = ${idx}")
+            params.append(value)
+            idx += 1
+        where = " AND ".join(conditions)
         row = await self._p.fetchrow(
-            "SELECT data FROM documents WHERE collection=$1 AND name=$2",
-            collection,
-            name,
+            f"SELECT data FROM documents WHERE {where}",
+            *params,
         )
         if row is None:
             return None
@@ -116,11 +124,20 @@ class PostgresStore(BaseAgentStore):
             name,
         )
 
-    async def batch_get(self, collection: str) -> list[dict]:
-        """Return every document in *collection*."""
+    async def batch_get(self, collection: str, **filters) -> list[dict]:
+        """Return every document in *collection* matching all ``**filters``."""
+        self._validate_filter_keys(**filters)
+        conditions = ["collection = $1"]
+        params = [collection]
+        idx = 2
+        for key, value in filters.items():
+            conditions.append(f"data->>'{key}' = ${idx}")
+            params.append(value)
+            idx += 1
+        where = " AND ".join(conditions)
         rows = await self._p.fetch(
-            "SELECT name, data FROM documents WHERE collection=$1",
-            collection,
+            f"SELECT name, data FROM documents WHERE {where}",
+            *params,
         )
         docs = []
         for row in rows:
