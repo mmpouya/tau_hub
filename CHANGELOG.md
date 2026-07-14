@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 — 2026-07-14
+
+### Added
+- **Extra filter support in `get` and `batch_get`.** All store backends and
+  `TauHub` list/get methods now accept optional `**filters` keyword arguments.
+  Store documents with arbitrary fields via `register_agent(name, system,
+  service="translation")`, then query them with
+  `batch_get("agents", service="translation")` or
+  `list_agents(service="translation")` to return only matching documents.
+  - Server-side filtering: SQLite (`json_extract`), PostgreSQL (`data->>`),
+    MongoDB (native query), TinyDB (dynamic `Query`).
+  - In-memory filtering: Redis (no server-side JSON querying).
+  - Filter key validation prevents SQL injection in SQL-based backends.
+
 ## 0.2.0 — 2026-07-11
 
 ### Added
